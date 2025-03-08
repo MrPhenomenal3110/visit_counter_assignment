@@ -1,6 +1,4 @@
-from typing import Dict, List, Any
-import asyncio
-from datetime import datetime
+from typing import Dict
 from ..core.redis_manager import RedisManager
 
 class VisitCounterService:
@@ -11,27 +9,9 @@ class VisitCounterService:
         self.redis_manager = RedisManager()
 
     async def increment_visit(self, page_id: str) -> None:
-        """
-        Increment visit count for a page
-        
-        Args:
-            page_id: Unique identifier for the page
-        """
-        if page_id not in VisitCounterService.visit_counts:
-            VisitCounterService.visit_counts[page_id] = 0
-        VisitCounterService.visit_counts[page_id] = 1 + VisitCounterService.visit_counts[page_id]
-        print(VisitCounterService.visit_counts)
-        pass
+        await self.redis_manager.increment(f"visit_count:{page_id}")
 
     async def get_visit_count(self, page_id: str) -> int:
-        """
-        Get current visit count for a page
-        
-        Args:
-            page_id: Unique identifier for the page
-            
-        Returns:
-            Current visit count
-        """
-        print(VisitCounterService.visit_counts)
-        return VisitCounterService.visit_counts.get(page_id, 0)
+        visit_count = await self.redis_manager.get(f"visit_count:{page_id}")
+        return visit_count
+

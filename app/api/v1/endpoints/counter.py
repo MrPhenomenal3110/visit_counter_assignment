@@ -19,6 +19,7 @@ async def record_visit(
         await counter_service.increment_visit(page_id)
         return {"status": "success", "message": f"Visit recorded for page {page_id}"}
     except Exception as e:
+        print("Error: ", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/visits/{page_id}", response_model=VisitCount)
@@ -29,6 +30,7 @@ async def get_visits(
     """Get visit count for a website"""
     try:
         count = await counter_service.get_visit_count(page_id)
-        return VisitCount(visits=count, served_via="API")
+        return VisitCount(visits=count, served_via="REDIS")
     except Exception as e:
+        print("Error: ", str(e))
         raise HTTPException(status_code=500, detail=str(e)) 
