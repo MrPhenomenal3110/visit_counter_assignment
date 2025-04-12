@@ -10,26 +10,11 @@ class VisitCounterService:
         self.local_ttl = 30  # seconds (TTL for cache)
         self.cleanup_interval = 3  # cleanup every 3 seconds
 
-        # Task to clean expired cache
-        asyncio.create_task(self._cleanup_expired_local_cache())
-
         # Task to batch process updates to Redis
         asyncio.create_task(self._batch_update_to_redis())
 
         # Store the keys that need to be updated in Redis (within the TTL)
         self.local_updates: Dict[str, int] = {}
-
-    async def _cleanup_expired_local_cache(self):
-        """Periodically clean up expired entries from local memory."""
-        while True:
-            now = time.time()
-            keys_to_delete = [
-                key for key, (_, timestamp) in self.local_memory.items()
-                if now - timestamp > self.local_ttl
-            ]
-            for key in keys_to_delete:
-                del self.local_memory[key]
-            await asyncio.sleep(self.cleanup_interval)
 
     async def _batch_update_to_redis(self):
         """Periodically batch update the local memory to Redis after TTL (5 seconds)."""
