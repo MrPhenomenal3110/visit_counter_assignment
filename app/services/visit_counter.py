@@ -7,7 +7,7 @@ class VisitCounterService:
     def __init__(self):
         self.redis_manager = RedisManager()
         self.local_memory: Dict[str, Tuple[int, float]] = {}
-        self.local_ttl = 5  # seconds (TTL for cache)
+        self.local_ttl = 30  # seconds (TTL for cache)
         self.cleanup_interval = 3  # cleanup every 3 seconds
 
         # Task to clean expired cache
