@@ -1,6 +1,4 @@
-import hashlib
-from typing import List, Dict, Any
-from bisect import bisect
+from typing import List
 
 class ConsistentHash:
     def __init__(self, nodes: List[str], virtual_nodes: int = 100):
