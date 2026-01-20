@@ -59,10 +59,203 @@ curl -X POST http://localhost:8000/api/v1/counter/visit/123
 curl http://localhost:8000/api/v1/counter/visits/123
 ```
 
+## CI/CD Pipeline
+
+This project includes a production-grade CI/CD pipeline implemented using GitHub Actions. The pipeline follows DevSecOps principles with security checks integrated at every stage.
+
+### CI Pipeline (`.github/workflows/ci.yml`)
+
+**Trigger**: Automatically runs on push to `master`/`main` branches, or manually via `workflow_dispatch`
+
+#### Pipeline Stages and Reasoning:
+
+1. **Checkout**: Retrieves source code from the repository
+   - **Why**: Required to access application code and dependencies
+
+2. **Setup Python**: Configures Python 3.11 runtime with pip caching
+   - **Why**: Ensures consistent build environment and speeds up dependency installation
+
+3. **Linting (Ruff)**: Enforces coding standards and identifies code quality issues
+   - **Why**: Prevents technical debt accumulation and maintains code consistency
+   - **Risk Mitigated**: Catches style violations and potential bugs early
+
+4. **SAST (CodeQL)**: Static Application Security Testing for Python
+   - **Why**: Detects code-level vulnerabilities (OWASP Top 10) before deployment
+   - **Risk Mitigated**: Identifies security flaws like SQL injection, XSS, insecure deserialization
+
+5. **SCA (pip-audit)**: Software Composition Analysis for Python dependencies
+   - **Why**: Identifies vulnerable dependencies in the supply chain
+   - **Risk Mitigated**: Prevents shipping applications with known CVEs in dependencies
+
+6. **Unit Tests (pytest)**: Validates business logic correctness
+   - **Why**: Ensures code changes don't introduce regressions
+   - **Risk Mitigated**: Catches functional bugs before they reach production
+
+7. **Docker Build**: Creates containerized application image
+   - **Why**: Packages application for consistent deployment across environments
+   - **Uses**: Docker Buildx with GitHub Actions cache for faster builds
+
+8. **Container Image Scan (Trivy)**: Scans Docker image for OS and library vulnerabilities
+   - **Why**: Prevents vulnerable container images from being deployed
+   - **Risk Mitigated**: Identifies CVEs in base image and installed packages
+   - **Output**: Results uploaded to GitHub Security tab
+
+9. **Runtime Test**: Validates container behavior with health check
+   - **Why**: Ensures the containerized application starts and responds correctly
+   - **Risk Mitigated**: Catches runtime configuration issues before deployment
+
+10. **Registry Push**: Publishes trusted image to DockerHub
+    - **Why**: Makes the validated image available for deployment
+    - **Tags**: Both commit SHA and `latest` tag for traceability
+
+### CD Pipeline (`.github/workflows/cd.yml`)
+
+**Trigger**: Manual execution via `workflow_dispatch` (for controlled deployments)
+
+#### Pipeline Stages and Reasoning:
+
+1. **Checkout**: Retrieves source code (for consistency)
+   - **Why**: Ensures workflow has access to any deployment scripts or manifests
+
+2. **AWS Authentication**: Configures AWS credentials for EKS access
+   - **Why**: Required to authenticate with AWS services
+   - **Uses**: `aws-actions/configure-aws-credentials` action
+
+3. **Install eksctl**: Installs eksctl CLI tool
+   - **Why**: Required to configure kubectl for EKS cluster access
+
+4. **Configure kubeconfig**: Sets up kubectl to connect to EKS cluster
+   - **Why**: Enables kubectl commands to interact with the Kubernetes cluster
+   - **Method**: Uses `eksctl utils write-kubeconfig` for secure cluster access
+
+5. **Deploy to Kubernetes**: Updates the running deployment with new image
+   - **Why**: Performs zero-downtime rolling update of the application
+   - **Method**: `kubectl set image` updates the deployment with the new image tag
+   - **Assumption**: Deployment named `visit-counter` with container `app` exists in `default` namespace
+   - **Rollout**: Waits for deployment to complete with timeout
+
+6. **DAST - Basic Health Check**: Performs basic dynamic security testing
+   - **Why**: Validates the deployed service is accessible and responding
+   - **Note**: This is a placeholder for full DAST; production should use dedicated DAST tools
+
+### Required GitHub Configuration
+
+#### Repository Variables (Settings → Secrets and variables → Actions → Variables)
+- `DOCKERHUB_USERNAME`: Your DockerHub username
+- `IMAGE_NAME`: Name of the Docker image (e.g., `visit-counter`)
+
+#### Repository Secrets (Settings → Secrets and variables → Actions → Secrets)
+- `DOCKERHUB_TOKEN`: DockerHub access token for pushing images
+- `AWS_ACCESS_KEY_ID`: AWS access key for EKS cluster access
+- `AWS_SECRET_ACCESS_KEY`: AWS secret access key
+- `AWS_REGION`: AWS region where EKS cluster is located (e.g., `us-east-1`)
+- `EKS_CLUSTER_NAME`: Name of your EKS cluster
+
+### Prerequisites for CD Pipeline
+
+Before running the CD pipeline, ensure:
+1. EKS cluster is running and accessible
+2. Kubernetes Deployment named `visit-counter` exists with:
+   - Container name: `app`
+   - Namespace: `default`
+   - Initial image can be any placeholder (will be updated by CD pipeline)
+
+Example Deployment manifest (for reference):
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: visit-counter
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: visit-counter
+  template:
+    metadata:
+      labels:
+        app: visit-counter
+    spec:
+      containers:
+      - name: app
+        image: placeholder/visit-counter:latest
+        ports:
+        - containerPort: 8000
+```
+
+### Running CI/CD Locally
+
+#### Run CI Checks Locally:
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+pip install ruff pip-audit pytest httpx
+
+# Run linting
+ruff check app/
+
+# Run security scan
+pip-audit
+
+# Run tests
+pytest tests/ -v
+
+# Build Docker image
+docker build -t visit-counter:local .
+
+# Scan image with Trivy (requires Trivy installed)
+trivy image visit-counter:local
+
+# Test container runtime
+docker run -d --name test-container -p 8000:8000 visit-counter:local
+curl http://localhost:8000/
+docker stop test-container && docker rm test-container
+```
+
+#### Test CD Steps Locally:
+
+```bash
+# Configure AWS credentials
+export AWS_ACCESS_KEY_ID=your-key
+export AWS_SECRET_ACCESS_KEY=your-secret
+export AWS_REGION=your-region
+
+# Install eksctl (if not installed)
+# macOS: brew install eksctl
+# Linux: Follow eksctl installation guide
+
+# Configure kubeconfig
+eksctl utils write-kubeconfig --cluster your-cluster-name --region your-region
+
+# Verify connection
+kubectl get nodes
+
+# Deploy update
+kubectl set image deployment/visit-counter app=your-username/visit-counter:tag -n default
+kubectl rollout status deployment/visit-counter -n default
+```
+
+### Security and Quality Gates
+
+The CI pipeline implements multiple security gates:
+- **Code Quality**: Ruff linting fails on style violations
+- **Code Security**: CodeQL analysis surfaces vulnerabilities in GitHub Security tab
+- **Dependency Security**: pip-audit fails on high/critical CVEs
+- **Container Security**: Trivy scan blocks vulnerable images
+- **Runtime Validation**: Container health check ensures deployability
+
+**Fail-Fast Philosophy**: Each stage must pass before proceeding to the next, preventing vulnerable or broken code from progressing through the pipeline.
+
 ## File Structure
 
 ```
 .
+├── .github/
+│   └── workflows/
+│       ├── ci.yml          # Continuous Integration pipeline
+│       └── cd.yml          # Continuous Deployment pipeline
 ├── app/
 │   ├── api/
 │   │   └── v1/
