@@ -88,5 +88,5 @@ jobs:
           else
             SERVICE_URL=${SERVICE_HOST:-$SERVICE_IP}
             echo "Testing service at: $SERVICE_URL"
-            curl -f http://$SERVICE_URL/ || echo "Health check failed"
+            curl -f -X POST "http://$SERVICE_URL/api/v1/counter/visit/test" --data "" || echo "Health check failed"
           fi
