@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: visit-counter
-  namespace: default
 spec:
   replicas: 1
   selector:
@@ -17,6 +16,6 @@ spec:
       - name: dockerhub-creds
       containers:
       - name: app
-        image: premshah31/visit-counter-app:latest
+        image: DOCKERHUB_USERNAME/IMAGE_NAME:IMAGE_TAG
         ports:
         - containerPort: 8000

@@ -110,33 +110,33 @@ This project includes a production-grade CI/CD pipeline implemented using GitHub
 
 ### CD Pipeline (`.github/workflows/cd.yml`)
 
-**Trigger**: Manual execution via `workflow_dispatch` (for controlled deployments)
+**Trigger**:
+- Automatic after successful CI run (via `workflow_run`)
+- Manual via `workflow_dispatch` with optional `image_tag`
 
 #### Pipeline Stages and Reasoning:
 
-1. **Checkout**: Retrieves source code (for consistency)
-   - **Why**: Ensures workflow has access to any deployment scripts or manifests
+1. **Checkout**: Retrieves source code (for manifests)
+   - **Why**: Ensures workflow has access to `k8s/*.yaml`
 
 2. **AWS Authentication**: Configures AWS credentials for EKS access
    - **Why**: Required to authenticate with AWS services
    - **Uses**: `aws-actions/configure-aws-credentials` action
 
-3. **Install eksctl**: Installs eksctl CLI tool
-   - **Why**: Required to configure kubectl for EKS cluster access
+3. **Configure kubeconfig**: Sets up kubectl to connect to EKS cluster
+   - **Why**: Enables kubectl commands to interact with the cluster
+   - **Method**: `aws eks update-kubeconfig`
 
-4. **Configure kubeconfig**: Sets up kubectl to connect to EKS cluster
-   - **Why**: Enables kubectl commands to interact with the Kubernetes cluster
-   - **Method**: Uses `eksctl utils write-kubeconfig` for secure cluster access
+4. **Determine Image Tag**: Uses CI commit SHA or manual input
+   - **Why**: Guarantees we deploy a specific, traceable image
 
-5. **Deploy to Kubernetes**: Updates the running deployment with new image
-   - **Why**: Performs zero-downtime rolling update of the application
-   - **Method**: `kubectl set image` updates the deployment with the new image tag
-   - **Assumption**: Deployment named `visit-counter` with container `app` exists in `default` namespace
-   - **Rollout**: Waits for deployment to complete with timeout
+5. **Deploy to Kubernetes**: Applies manifests and waits for rollout
+   - **Why**: Reconciles desired state and performs rolling updates
+   - **Method**: `kubectl apply -f k8s/deployment.yaml -f k8s/service.yaml`
 
-6. **DAST - Basic Health Check**: Performs basic dynamic security testing
+6. **DAST - Basic Health Check**: Performs basic dynamic testing
    - **Why**: Validates the deployed service is accessible and responding
-   - **Note**: This is a placeholder for full DAST; production should use dedicated DAST tools
+   - **Note**: Placeholder for full DAST; production should use dedicated tools
 
 ### Required GitHub Configuration
 
@@ -155,20 +155,20 @@ This project includes a production-grade CI/CD pipeline implemented using GitHub
 
 Before running the CD pipeline, ensure:
 1. EKS cluster is running and accessible
-2. Kubernetes Deployment named `visit-counter` exists with:
-   - Container name: `app`
-   - Namespace: `default`
-   - Initial image can be any placeholder (will be updated by CD pipeline)
+2. Kubernetes manifests exist in `k8s/`:
+   - `k8s/deployment.yaml`
+   - `k8s/service.yaml`
+3. If the DockerHub repo is private, create the image pull secret named `dockerhub-creds`
+4. (Optional) Set `K8S_NAMESPACE` repo variable to override the default namespace
 
-Example Deployment manifest (for reference):
+Example Deployment manifest (placeholders are replaced in CD):
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: visit-counter
-  namespace: default
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: visit-counter
@@ -177,9 +177,11 @@ spec:
       labels:
         app: visit-counter
     spec:
+      imagePullSecrets:
+      - name: dockerhub-creds
       containers:
       - name: app
-        image: placeholder/visit-counter:latest
+        image: DOCKERHUB_USERNAME/IMAGE_NAME:IMAGE_TAG
         ports:
         - containerPort: 8000
 ```
@@ -222,18 +224,21 @@ export AWS_ACCESS_KEY_ID=your-key
 export AWS_SECRET_ACCESS_KEY=your-secret
 export AWS_REGION=your-region
 
-# Install eksctl (if not installed)
-# macOS: brew install eksctl
-# Linux: Follow eksctl installation guide
-
 # Configure kubeconfig
-eksctl utils write-kubeconfig --cluster your-cluster-name --region your-region
+aws eks update-kubeconfig --name your-cluster-name --region your-region
 
 # Verify connection
 kubectl get nodes
 
-# Deploy update
-kubectl set image deployment/visit-counter app=your-username/visit-counter:tag -n default
+# Deploy update (replace placeholders)
+export DOCKERHUB_USERNAME=your-username
+export IMAGE_NAME=visit-counter-app
+export IMAGE_TAG=latest
+sed -i "s|DOCKERHUB_USERNAME|$DOCKERHUB_USERNAME|g" k8s/deployment.yaml
+sed -i "s|IMAGE_NAME|$IMAGE_NAME|g" k8s/deployment.yaml
+sed -i "s|IMAGE_TAG|$IMAGE_TAG|g" k8s/deployment.yaml
+kubectl apply -f k8s/deployment.yaml -n default
+kubectl apply -f k8s/service.yaml -n default
 kubectl rollout status deployment/visit-counter -n default
 ```
 
